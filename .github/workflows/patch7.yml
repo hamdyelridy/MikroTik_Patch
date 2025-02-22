@@ -13,14 +13,14 @@ env:
   CUSTOM_NPK_SIGN_PUBLIC_KEY: 28F886E32C141123126CFBCAD56766E99D1720CEB1F12BE2468BEBE7662FBEDB
   CUSTOM_LICENSE_PRIVATE_KEY: 9DBC845E9018537810FDAE62824322EEE1B12BAD81FCA28EC295FB397C61CE0B
   CUSTOM_LICENSE_PUBLIC_KEY: 723A34A6E3300F23E4BAA06156B9327514AEC170732655F16E04C17928DD770F
-  LATEST_VERSION: "7.2"
+  SPECIFIC_VERSION: 7.2
 
 jobs:
   patch:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: [x86]
+        arch: [x86, arm, arm64, mipsbe, mmips, smips, ppc]
 
     steps:
     - name: Checkout
@@ -37,10 +37,11 @@ jobs:
         sudo apt-get install -y mkisofs xorriso qemu-utils extlinux --no-install-recommends
         sudo pip install -r requirements.txt
 
-    - name: Set version and arch
+    - name: Set version
       id: set_version
       run: |
-        echo "LATEST_VERSION=${{ env.LATEST_VERSION }}" >> $GITHUB_ENV
+        echo "SPECIFIC_VERSION=${{ env.SPECIFIC_VERSION }}" >> $GITHUB_ENV
+        echo "has_new_version=true" >> $GITHUB_OUTPUT
         if [ "${{ matrix.arch }}" == "x86" ]; then
           ARCH=''
         elif [ "${{ matrix.arch }}" == "arm" ]; then
@@ -51,70 +52,49 @@ jobs:
           ARCH='-mipsbe'
         elif [ "${{ matrix.arch }}" == "mmips" ]; then
           ARCH='-mmips'
-        elif [ "${{ matrix.arch }}" == "smips" ]; then
+        elif [ "${{ matrix.arch }}" == "smips" ];hen
           ARCH='-smips'
         elif [ "${{ matrix.arch }}" == "ppc" ]; then
           ARCH='-ppc'
         fi
         echo "ARCH=$ARCH" >> $GITHUB_ENV
-        echo "has_new_version=true" >> $GITHUB_OUTPUT
 
-    - name: Cache mikrotik-${{ env.LATEST_VERSION }}${{ env.ARCH }}.iso
+    - name: Cache mikrotik-${{ env.SPECIFIC_VERSION }}${{ env.ARCH }}.iso
       if: steps.set_version.outputs.has_new_version == 'true' && (matrix.arch == 'x86' || matrix.arch == 'arm64')
       id: cache_mikrotik
       uses: actions/cache@v4
       with:
         path: mikrotik.iso
-        key: mikrotik-${{ env.LATEST_VERSION }}-${{ matrix.arch }}
+        key: mikrotik-${{ env.SPECIFIC_VERSION }}-${{ matrix.arch }}
 
-    - name: Get mikrotik-${{ env.LATEST_VERSION }}${{ env.ARCH }}.iso
+    - name: Get mikrotik-${{ env.SPECIFIC_VERSION }}${{ env.ARCH }}.iso
       if: steps.set_version.outputs.has_new_version == 'true' && steps.cache_mikrotik.outputs.cache-hit != 'true' && (matrix.arch == 'x86' || matrix.arch == 'arm64')
       run: |
-        echo "Downloading mikrotik.iso..."
-        sudo curl -s -o mikrotik.iso https://download.mikrotik.com/routeros/$LATEST_VERSION/mikrotik-$LATEST_VERSION$ARCH.iso
-        if [ ! -s mikrotik.iso ]; then
-          echo "Error: mikrotik.iso download failed or resulted in an empty file."
-          exit 1
-        fi
-        echo "mikrotik.iso downloaded successfully."
+        sudo curl -s -o mikrotik.iso https://download.mikrotik.com/routeros/$SPECIFIC_VERSION/mikrotik-$SPECIFIC_VERSION$ARCH.iso
 
-    - name: Patch mikrotik-${{ env.LATEST_VERSION }}${{ env.ARCH }}.iso
+    - name: Patch mikrotik-${{ env.SPECIFIC_VERSION }}${{ env.ARCH }}.iso
       if: steps.set_version.outputs.has_new_version == 'true' && (matrix.arch == 'x86' || matrix.arch == 'arm64')
       run: |
-        echo "Creating iso directory..."
         sudo mkdir iso
-        echo "Mounting mikrotik.iso..."
         sudo mount -o loop,ro mikrotik.iso iso/
-        if [ $? -ne 0 ]; then
-          echo "Error: Failed to mount mikrotik.iso.  Attempting to remount..."
-          sudo umount iso/ || true
-          sudo mount -o loop,ro mikrotik.iso iso/
-          if [ $? -ne 0 ]; then
-            echo "Error: Failed to mount mikrotik.iso after retry. Aborting."
-            exit 1
-          fi
-        fi
-        echo "Creating new_iso directory..."
         sudo mkdir new_iso
-        echo "Copying files from iso to new_iso..."
         sudo cp -r iso/* new_iso/
-        echo "Unmounting iso directory..."
+        sudo rsync -a iso/ new_iso/
         sudo umount iso/
-        echo "Removing iso directory..."
         sudo rm -rf iso/
         NPK_FILES=$(find new_iso/*.npk)
         for file in $NPK_FILES; do
           sudo -E python3 patch.py npk $file
         done
-        sudo cp new_iso/routeros-$LATEST_VERSION*.npk routeros-$LATEST_VERSION$ARCH-patched.npk
+        sudo cp new_iso/routeros-$SPECIFIC_VERSION*.npk routeros-$SPECIFIC_VERSION$ARCH-patched.npk
         sudo mkdir efiboot
         sudo mount -o loop new_iso/efiboot.img efiboot/
         if [ "${{ matrix.arch }}" == "x86" ]; then
           sudo -E python3 patch.py kernel efiboot/linux.x86_64
           sudo cp efiboot/linux.x86_64 new_iso/isolinux/linux
           sudo umount efiboot/
-          sudo mkisofs -o mikrotik-$LATEST_VERSION$ARCH-patched.iso \
-                       -V "MikroTik $LATEST_VERSION $ARCH" \
+          sudo mkisofs -o mikrotik-$SPECIFIC_VERSION$ARCH-patched.iso \
+                       -V "MikroTik $SPECIFIC_VERSION $ARCH" \
                        -sysid "" -preparer "MiKroTiK" \
                        -publisher "" -A "MiKroTiK RouterOS" \
                        -input-charset utf-8 \
@@ -131,8 +111,8 @@ jobs:
         elif [ "${{ matrix.arch }}" == "arm64" ]; then
           sudo -E python3 patch.py kernel efiboot/EFI/BOOT/BOOTAA64.EFI
           sudo umount efiboot/
-          sudo xorriso -as mkisofs -o mikrotik-$LATEST_VERSION$ARCH-patched.iso \
-                       -V "MikroTik $LATEST_VERSION ${{ matrix.arch }}" \
+          sudo xorriso -as mkisofs -o mikrotik-$SPECIFIC_VERSION$ARCH-patched.iso \
+                       -V "MikroTik $SPECIFIC_VERSION ${{ matrix.arch }}" \
                        -sysid "" -preparer "MiKroTiK" \
                        -publisher "" -A "MiKroTiK RouterOS" \
                        -input-charset utf-8 \
@@ -142,11 +122,11 @@ jobs:
                        new_iso/
         fi
         sudo rm -rf efiboot/
-        sudo mkdir all_packages_iso$ARCH-$LATEST_VERSION
-        sudo cp new_iso/*.npk all_packages_iso$ARCH-$LATEST_VERSION/
+        sudo mkdir all_packages_iso$ARCH-$SPECIFIC_VERSION
+        sudo cp new_iso/*.npk all_packages_iso$ARCH-$SPECIFIC_VERSION/
         sudo rm -rf new_iso/
-        cd all_packages_iso$ARCH-$LATEST_VERSION/
-        sudo zip ../all_packages$ARCH-$LATEST_VERSION-patched.zip *.npk
+        cd all_packages_iso$ARCH-$SPECIFIC_VERSION/
+        sudo zip ../all_packages$ARCH-$SPECIFIC_VERSION-patched.zip *.npk
         cd ../
 
     - name: Cache refind
@@ -162,25 +142,25 @@ jobs:
       run: |
         sudo curl -s -o refind-bin-0.14.2.zip https://nchc.dl.sourceforge.net/project/refind/0.14.2/refind-bin-0.14.2.zip
 
-    - name: Cache install-image-${{ env.LATEST_VERSION }}${{ env.ARCH }}.zip
+    - name: Cache install-image-${{ env.SPECIFIC_VERSION }}${{ env.ARCH }}.zip
       if: steps.set_version.outputs.has_new_version == 'true' && matrix.arch == 'x86'
       id: cache_install_image
       uses: actions/cache@v4
       with:
         path: install-image.zip
-        key: install-image-${{ env.LATEST_VERSION }}-${{ matrix.arch }}
+        key: install-image-${{ env.SPECIFIC_VERSION }}-${{ matrix.arch }}
 
-    - name: Get install-image-${{ env.LATEST_VERSION }}${{ env.ARCH }}.zip
+    - name: Get install-image-${{ env.SPECIFIC_VERSION }}${{ env.ARCH }}.zip
       if: steps.set_version.outputs.has_new_version == 'true' && steps.cache_install_image.outputs.cache-hit != 'true' && matrix.arch == 'x86'
       run: |
-        sudo curl -s -o install-image.zip https://download.mikrotik.com/routeros/$LATEST_VERSION/install-image-$LATEST_VERSION.zip
+        sudo curl -s -o install-image.zip https://download.mikrotik.com/routeros/$SPECIFIC_VERSION/install-image-$SPECIFIC_VERSION.zip
 
-    - name: Patch install-image-${{ env.LATEST_VERSION }}${{ env.ARCH }}.img
+    - name: Patch install-image-${{ env.SPECIFIC_VERSION }}${{ env.ARCH }}.img
       if: steps.set_version.outputs.has_new_version == 'true' && matrix.arch == 'x86'
       run: |
         sudo unzip install-image.zip
         sudo modprobe nbd
-        sudo qemu-nbd -c /dev/nbd0 -f raw install-image-$LATEST_VERSION.img
+        sudo qemu-nbd -c /dev/nbd0 -f raw install-image-$SPECIFIC_VERSION.img
         sudo mkdir install-image
         sudo mount /dev/nbd0 install-image/
         sudo unzip refind-bin-0.14.2.zip refind-bin-0.14.2/refind/refind_x64.efi
@@ -194,47 +174,47 @@ jobs:
         sudo umount /dev/nbd0
         sudo qemu-nbd -d /dev/nbd0
         sudo rm -rf install-image/
-        sudo mv install-image-$LATEST_VERSION.img install-image-$LATEST_VERSION$ARCH-patched.img
+        sudo mv install-image-$SPECIFIC_VERSION.img install-image-$SPECIFIC_VERSION$ARCH-patched.img
 
-        sudo qemu-img convert -f raw -O qcow2 install-image-$LATEST_VERSION$ARCH-patched.img install-image-$LATEST_VERSION$ARCH-patched.qcow2
-        sudo qemu-img convert -f raw -O vmdk install-image-$LATEST_VERSION$ARCH-patched.img install-image-$LATEST_VERSION$ARCH-patched.vmdk
-        sudo qemu-img convert -f raw -O vpc install-image-$LATEST_VERSION$ARCH-patched.img install-image-$LATEST_VERSION$ARCH-patched.vhd
-        sudo qemu-img convert -f raw -O vhdx install-image-$LATEST_VERSION$ARCH-patched.img install-image-$LATEST_VERSION$ARCH-patched.vhdx
-        sudo qemu-img convert -f raw -O vdi install-image-$LATEST_VERSION$ARCH-patched.img install-image-$LATEST_VERSION$ARCH-patched.vdi
+        sudo qemu-img convert -f raw -O qcow2 install-image-$SPECIFIC_VERSION$ARCH-patched.img install-image-$SPECIFIC_VERSION$ARCH-patched.qcow2
+        sudo qemu-img convert -f raw -O vmdk install-image-$SPECIFIC_VERSION$ARCH-patched.img install-image-$SPECIFIC_VERSION$ARCH-patched.vmdk
+        sudo qemu-img convert -f raw -O vpc install-image-$SPECIFIC_VERSION$ARCH-patched.img install-image-$SPECIFIC_VERSION$ARCH-patched.vhd
+        sudo qemu-img convert -f raw -O vhdx install-image-$SPECIFIC_VERSION$ARCH-patched.img install-image-$SPECIFIC_VERSION$ARCH-patched.vhdx
+        sudo qemu-img convert -f raw -O vdi install-image-$SPECIFIC_VERSION$ARCH-patched.img install-image-$SPECIFIC_VERSION$ARCH-patched.vdi
 
-        sudo zip install-image-$LATEST_VERSION$ARCH-patched.qcow2.zip install-image-$LATEST_VERSION$ARCH-patched.qcow2
-        sudo zip install-image-$LATEST_VERSION$ARCH-patched.vmdk.zip install-image-$LATEST_VERSION$ARCH-patched.vmdk
-        sudo zip install-image-$LATEST_VERSION$ARCH-patched.vhd.zip install-image-$LATEST_VERSION$ARCH-patched.vhd
-        sudo zip install-image-$LATEST_VERSION$ARCH-patched.vhdx.zip install-image-$LATEST_VERSION$ARCH-patched.vhdx
-        sudo zip install-image-$LATEST_VERSION$ARCH-patched.vdi.zip install-image-$LATEST_VERSION$ARCH-patched.vdi
-        sudo zip install-image-$LATEST_VERSION$ARCH-patched.img.zip install-image-$LATEST_VERSION$ARCH-patched.img
+        sudo zip install-image-$SPECIFIC_VERSION$ARCH-patched.qcow2.zip install-image-$SPECIFIC_VERSION$ARCH-patched.qcow2
+        sudo zip install-image-$SPECIFIC_VERSION$ARCH-patched.vmdk.zip install-image-$SPECIFIC_VERSION$ARCH-patched.vmdk
+        sudo zip install-image-$SPECIFIC_VERSION$ARCH-patched.vhd.zip install-image-$SPECIFIC_VERSION$ARCH-patched.vhd
+        sudo zip install-image-$SPECIFIC_VERSION$ARCH-patched.vhdx.zip install-image-$SPECIFIC_VERSION$ARCH-patched.vhdx
+        sudo zip install-image-$SPECIFIC_VERSION$ARCH-patched.vdi.zip install-image-$SPECIFIC_VERSION$ARCH-patched.vdi
+        sudo zip install-image-$SPECIFIC_VERSION$ARCH-patched.img.zip install-image-$SPECIFIC_VERSION$ARCH-patched.img
 
-        sudo rm install-image-$LATEST_VERSION$ARCH-patched.qcow2
-        sudo rm install-image-$LATEST_VERSION$ARCH-patched.vmdk
-        sudo rm install-image-$LATEST_VERSION$ARCH-patched.vhd
-        sudo rm install-image-$LATEST_VERSION$ARCH-patched.vhdx
-        sudo rm install-image-$LATEST_VERSION$ARCH-patched.vdi
-        sudo rm install-image-$LATEST_VERSION$ARCH-patched.img
+        sudo rm install-image-$SPECIFIC_VERSION$ARCH-patched.qcow2
+        sudo rm install-image-$SPECIFIC_VERSION$ARCH-patched.vmdk
+        sudo rm install-image-$SPECIFIC_VERSION$ARCH-patched.vhd
+        sudo rm install-image-$SPECIFIC_VERSION$ARCH-patched.vhdx
+        sudo rm install-image-$SPECIFIC_VERSION$ARCH-patched.vdi
+        sudo rm install-image-$SPECIFIC_VERSION$ARCH-patched.img
 
-    - name: Cache chr-${{ env.LATEST_VERSION }}${{ env.ARCH }}.zip
+    - name: Cache chr-${{ env.SPECIFIC_VERSION }}${{ env.ARCH }}.zip
       if: steps.set_version.outputs.has_new_version == 'true' && (matrix.arch == 'x86' || matrix.arch == 'arm64')
       id: cache_chr_img
       uses: actions/cache@v4
       with:
         path: chr.img.zip
-        key: chr-${{ env.LATEST_VERSION }}-${{ matrix.arch }}
+        key: chr-${{ env.SPECIFIC_VERSION }}-${{ matrix.arch }}
 
-    - name: Get chr-${{ env.LATEST_VERSION }}${{ env.ARCH }}.zip
+    - name: Get chr-${{ env.SPECIFIC_VERSION }}${{ env.ARCH }}.zip
       if: steps.set_version.outputs.has_new_version == 'true' && steps.cache_chr_img.outputs.cache-hit != 'true' && (matrix.arch == 'x86' || matrix.arch == 'arm64')
       run: |
-        sudo curl -s -o chr.img.zip https://download.mikrotik.com/routeros/$LATEST_VERSION/chr-$LATEST_VERSION$ARCH.img.zip
+        sudo curl -s -o chr.img.zip https://download.mikrotik.com/routeros/$SPECIFIC_VERSION/chr-$SPECIFIC_VERSION$ARCH.img.zip
 
-    - name: Patch chr-${{ env.LATEST_VERSION }}${{ env.ARCH }}.img
+    - name: Patch chr-${{ env.SPECIFIC_VERSION }}${{ env.ARCH }}.img
       if: steps.set_version.outputs.has_new_version == 'true' && (matrix.arch == 'x86' || matrix.arch == 'arm64')
       run: |
         sudo unzip chr.img.zip
         sudo modprobe nbd
-        sudo qemu-nbd -c /dev/nbd0 -f raw chr-$LATEST_VERSION$ARCH.img
+        sudo qemu-nbd -c /dev/nbd0 -f raw chr-$SPECIFIC_VERSION$ARCH.img
         sudo mkdir -p chr/{boot,routeros}
         sudo mount /dev/nbd0p1 chr/boot/
         if [ "${{ matrix.arch }}" == "x86" ]; then
@@ -251,29 +231,29 @@ jobs:
         sudo umount /dev/nbd0p2
         sudo rm -rf chr/
         sudo qemu-nbd -d /dev/nbd0
-        sudo mv chr-$LATEST_VERSION$ARCH.img chr-$LATEST_VERSION$ARCH-patched.img
+        sudo mv chr-$SPECIFIC_VERSION$ARCH.img chr-$SPECIFIC_VERSION$ARCH-patched.img
 
-        sudo qemu-img convert -f raw -O qcow2 chr-$LATEST_VERSION$ARCH-patched.img chr-$LATEST_VERSION$ARCH-patched.qcow2
-        sudo qemu-img convert -f raw -O vmdk chr-$LATEST_VERSION$ARCH-patched.img chr-$LATEST_VERSION$ARCH-patched.vmdk
-        sudo qemu-img convert -f raw -O vpc chr-$LATEST_VERSION$ARCH-patched.img chr-$LATEST_VERSION$ARCH-patched.vhd
-        sudo qemu-img convert -f raw -O vhdx chr-$LATEST_VERSION$ARCH-patched.img chr-$LATEST_VERSION$ARCH-patched.vhdx
-        sudo qemu-img convert -f raw -O vdi chr-$LATEST_VERSION$ARCH-patched.img chr-$LATEST_VERSION$ARCH-patched.vdi
+        sudo qemu-img convert -f raw -O qcow2 chr-$SPECIFIC_VERSION$ARCH-patched.img chr-$SPECIFIC_VERSION$ARCH-patched.qcow2
+        sudo qemu-img convert -f raw -O vmdk chr-$SPECIFIC_VERSION$ARCH-patched.img chr-$SPECIFIC_VERSION$ARCH-patched.vmdk
+        sudo qemu-img convert -f raw -O vpc chr-$SPECIFIC_VERSION$ARCH-patched.img chr-$SPECIFIC_VERSION$ARCH-patched.vhd
+        sudo qemu-img convert -f raw -O vhdx chr-$SPECIFIC_VERSION$ARCH-patched.img chr-$SPECIFIC_VERSION$ARCH-patched.vhdx
+        sudo qemu-img convert -f raw -O vdi chr-$SPECIFIC_VERSION$ARCH-patched.img chr-$SPECIFIC_VERSION$ARCH-patched.vdi
 
-        sudo zip chr-$LATEST_VERSION$ARCH-patched.qcow2.zip chr-$LATEST_VERSION$ARCH-patched.qcow2
-        sudo zip chr-$LATEST_VERSION$ARCH-patched.vmdk.zip chr-$LATEST_VERSION$ARCH-patched.vmdk
-        sudo zip chr-$LATEST_VERSION$ARCH-patched.vhd.zip chr-$LATEST_VERSION$ARCH-patched.vhd
-        sudo zip chr-$LATEST_VERSION$ARCH-patched.vhdx.zip chr-$LATEST_VERSION$ARCH-patched.vhdx
-        sudo zip chr-$LATEST_VERSION$ARCH-patched.vdi.zip chr-$LATEST_VERSION$ARCH-patched.vdi
-        sudo zip chr-$LATEST_VERSION$ARCH-patched.img.zip chr-$LATEST_VERSION$ARCH-patched.img
+        sudo zip chr-$SPECIFIC_VERSION$ARCH-patched.qcow2.zip chr-$SPECIFIC_VERSION$ARCH-patched.qcow2
+        sudo zip chr-$SPECIFIC_VERSION$ARCH-patched.vmdk.zip chr-$SPECIFIC_VERSION$ARCH-patched.vmdk
+        sudo zip chr-$SPECIFIC_VERSION$ARCH-patched.vhd.zip chr-$SPECIFIC_VERSION$ARCH-patched.vhd
+        sudo zip chr-$SPECIFIC_VERSION$ARCH-patched.vhdx.zip chr-$SPECIFIC_VERSION$ARCH-patched.vhdx
+        sudo zip chr-$SPECIFIC_VERSION$ARCH-patched.vdi.zip chr-$SPECIFIC_VERSION$ARCH-patched.vdi
+        sudo zip chr-$SPECIFIC_VERSION$ARCH-patched.img.zip chr-$SPECIFIC_VERSION$ARCH-patched.img
 
-        sudo rm chr-$LATEST_VERSION$ARCH-patched.qcow2
-        sudo rm chr-$LATEST_VERSION$ARCH-patched.vmdk
-        sudo rm chr-$LATEST_VERSION$ARCH-patched.vhd
-        sudo rm chr-$LATEST_VERSION$ARCH-patched.vhdx
-        sudo rm chr-$LATEST_VERSION$ARCH-patched.vdi
-        sudo rm chr-$LATEST_VERSION$ARCH-patched.img
+        sudo rm chr-$SPECIFIC_VERSION$ARCH-patched.qcow2
+        sudo rm chr-$SPECIFIC_VERSION$ARCH-patched.vmdk
+        sudo rm chr-$SPECIFIC_VERSION$ARCH-patched.vhd
+        sudo rm chr-$SPECIFIC_VERSION$ARCH-patched.vhdx
+        sudo rm chr-$SPECIFIC_VERSION$ARCH-patched.vdi
+        sudo rm chr-$SPECIFIC_VERSION$ARCH-patched.img
 
-    - name: Cache NetInstall ${{ env.LATEST_VERSION }}
+    - name: Cache NetInstall ${{ env.SPECIFIC_VERSION }}
       if: steps.set_version.outputs.has_new_version == 'true' && matrix.arch == 'x86'
       id: cache_netinstall
       uses: actions/cache@v4
@@ -282,16 +262,16 @@ jobs:
           netinstall.zip
           netinstall64.zip
           netinstall.tar.gz
-        key: netinstall-${{ env.LATEST_VERSION }}
+        key: netinstall-${{ env.SPECIFIC_VERSION }}
 
-    - name: Get netinstall ${{ env.LATEST_VERSION }}
+    - name: Get netinstall ${{ env.SPECIFIC_VERSION }}
       if: steps.set_version.outputs.has_new_version == 'true' && matrix.arch == 'x86' && steps.cache_netinstall.outputs.cache-hit != 'true'
       run: |
-        sudo curl -s -o netinstall.zip https://download.mikrotik.com/routeros/$LATEST_VERSION/netinstall-$LATEST_VERSION.zip
-        sudo curl -s -o netinstall64.zip https://download.mikrotik.com/routeros/$LATEST_VERSION/netinstall64-$LATEST_VERSION.zip
-        sudo curl -s -o netinstall.tar.gz https://download.mikrotik.com/routeros/$LATEST_VERSION/netinstall-$LATEST_VERSION.tar.gz
+        sudo curl -s -o netinstall.zip https://download.mikrotik.com/routeros/$SPECIFIC_VERSION/netinstall-$SPECIFIC_VERSION.zip
+        sudo curl -s -o netinstall64.zip https://download.mikrotik.com/routeros/$SPECIFIC_VERSION/netinstall64-$SPECIFIC_VERSION.zip
+        sudo curl -s -o netinstall.tar.gz https://download.mikrotik.com/routeros/$SPECIFIC_VERSION/netinstall-$SPECIFIC_VERSION.tar.gz
 
-    - name: Patch netinstall ${{ env.LATEST_VERSION }}
+    - name: Patch netinstall ${{ env.SPECIFIC_VERSION }}
       if: steps.set_version.outputs.has_new_version == 'true' && matrix.arch == 'x86'
       run: |
         echo "Attempting to patch netinstall files..."
