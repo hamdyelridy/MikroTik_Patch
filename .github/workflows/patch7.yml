@@ -70,17 +70,37 @@ jobs:
     - name: Get mikrotik-${{ env.LATEST_VERSION }}${{ env.ARCH }}.iso
       if: steps.set_version.outputs.has_new_version == 'true' && steps.cache_mikrotik.outputs.cache-hit != 'true' && (matrix.arch == 'x86' || matrix.arch == 'arm64')
       run: |
+        echo "Downloading mikrotik.iso..."
         sudo curl -s -o mikrotik.iso https://download.mikrotik.com/routeros/$LATEST_VERSION/mikrotik-$LATEST_VERSION$ARCH.iso
+        if [ ! -s mikrotik.iso ]; then
+          echo "Error: mikrotik.iso download failed or resulted in an empty file."
+          exit 1
+        fi
+        echo "mikrotik.iso downloaded successfully."
 
     - name: Patch mikrotik-${{ env.LATEST_VERSION }}${{ env.ARCH }}.iso
       if: steps.set_version.outputs.has_new_version == 'true' && (matrix.arch == 'x86' || matrix.arch == 'arm64')
       run: |
+        echo "Creating iso directory..."
         sudo mkdir iso
+        echo "Mounting mikrotik.iso..."
         sudo mount -o loop,ro mikrotik.iso iso/
+        if [ $? -ne 0 ]; then
+          echo "Error: Failed to mount mikrotik.iso.  Attempting to remount..."
+          sudo umount iso/ || true
+          sudo mount -o loop,ro mikrotik.iso iso/
+          if [ $? -ne 0 ]; then
+            echo "Error: Failed to mount mikrotik.iso after retry. Aborting."
+            exit 1
+          fi
+        fi
+        echo "Creating new_iso directory..."
         sudo mkdir new_iso
+        echo "Copying files from iso to new_iso..."
         sudo cp -r iso/* new_iso/
-        sudo rsync -a iso/ new_iso/
+        echo "Unmounting iso directory..."
         sudo umount iso/
+        echo "Removing iso directory..."
         sudo rm -rf iso/
         NPK_FILES=$(find new_iso/*.npk)
         for file in $NPK_FILES; do
