@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: [x86]
+        arch: [x86, arm, arm64, mipsbe, mmips, smips, ppc]
 
     steps:
     - name: Checkout
@@ -274,9 +274,38 @@ jobs:
     - name: Patch netinstall ${{ env.LATEST_VERSION }}
       if: steps.set_version.outputs.has_new_version == 'true' && matrix.arch == 'x86'
       run: |
-        sudo tar -xvf netinstall.tar.gz
-        sudo -E python3 patch.py netinstall netinstall-cli
-        sudo tar -czvf netinstall-$LATEST_VERSION-patched.tar.gz netinstall-cli
+        echo "Attempting to patch netinstall files..."
+        if [ -f netinstall.zip ]; then
+          echo "netinstall.zip found. Extracting..."
+          sudo unzip netinstall.zip netinstall.exe
+          echo "Patching netinstall.exe..."
+          sudo -E python3 patch.py netinstall netinstall.exe
+          echo "Zipping netinstall-$LATEST_VERSION-patched.zip..."
+          sudo zip netinstall-$LATEST_VERSION-patched.zip netinstall.exe
+        else
+          echo "netinstall.zip not found."
+        fi
+        if [ -f netinstall64.zip ]; then
+          echo "netinstall64.zip found. Extracting..."
+          sudo unzip netinstall64.zip netinstall64.exe
+          echo "Patching netinstall64.exe..."
+          sudo -E python3 patch.py netinstall netinstall64.exe
+          echo "Zipping netinstall64-$LATEST_VERSION-patched.zip..."
+          sudo zip netinstall64-$LATEST_VERSION-patched.zip netinstall64.exe
+        else
+          echo "netinstall64.zip not found."
+        fi
+        if [ -f netinstall.tar.gz ]; then
+          echo "netinstall.tar.gz found. Extracting..."
+          sudo tar -xvf netinstall.tar.gz
+          echo "Patching netinstall-cli..."
+          sudo -E python3 patch.py netinstall netinstall-cli
+          echo "Creating netinstall-$LATEST_VERSION-patched.tar.gz..."
+          sudo tar -czvf netinstall-$LATEST_VERSION-patched.tar.gz netinstall-cli
+        else
+          echo "netinstall.tar.gz not found."
+        fi
+        echo "Netinstall patching complete."
 
     - name: Cache routeros-${{ env.LATEST_VERSION }}${{ env.ARCH }}.npk & all_packages${{ env.ARCH }}-${{ env.LATEST_VERSION }}.zip
       if: steps.set_version.outputs.has_new_version == 'true' && matrix.arch != 'x86'
