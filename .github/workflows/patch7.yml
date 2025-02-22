@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: [x86, arm, mipsbe, mmips, smips, ppc]
+        arch: [x86, arm, mipsbe, ppc]
 
     steps:
     - name: Checkout
