@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: [x86]
+        arch: [x86, arm, arm64, mipsbe, mmips, smips, ppc]
 
     steps:
     - name: Checkout
@@ -274,12 +274,6 @@ jobs:
     - name: Patch netinstall ${{ env.LATEST_VERSION }}
       if: steps.set_version.outputs.has_new_version == 'true' && matrix.arch == 'x86'
       run: |
-        sudo unzip netinstall.zip netinstall.exe
-        sudo -E python3 patch.py netinstall netinstall.exe
-        sudo zip netinstall-$LATEST_VERSION-patched.zip netinstall.exe
-        sudo unzip netinstall64.zip netinstall64.exe
-        sudo -E python3 patch.py netinstall netinstall64.exe
-        sudo zip netinstall64-$LATEST_VERSION-patched.zip netinstall64.exe
         sudo tar -xvf netinstall.tar.gz
         sudo -E python3 patch.py netinstall netinstall-cli
         sudo tar -czvf netinstall-$LATEST_VERSION-patched.tar.gz netinstall-cli
@@ -343,40 +337,3 @@ jobs:
           chr-${{ env.LATEST_VERSION }}${{ env.ARCH }}-patched.*.zip
           routeros-${{ env.LATEST_VERSION }}${{ env.ARCH }}-patched.npk
           all_packages*-${{ env.LATEST_VERSION }}-patched.zip
-# Remove the check latest version step
-    #- name: Check latest version
-    #  id: get_latest
-    #  run: |
-    #    echo $(uname -a)
-    #    NEWEST=$(curl -s https://upgrade.mikrotik.com/routeros/NEWESTa7.stable)
-    #    LATEST_VERSION=$(echo "$NEWEST" | cut -d' ' -f1)
-    #    BUILD_TIME=$(echo "$NEWEST" | cut -d' ' -f2)
-    #    echo Latest Version: $LATEST_VERSION
-    #    echo Build Time: $BUILD_TIME
-    #    _LATEST_VERSION=$(cat latest7.txt | cut -d ' ' -f1)
-    #    if [ "$_LATEST_VERSION" == "$LATEST_VERSION" ]; then
-    #      echo "No new version found"
-    #      echo "has_new_version=false" >> $GITHUB_OUTPUT
-    #      exit 0
-    #    fi
-    #    echo "has_new_version=true" >> $GITHUB_OUTPUT
-    #    curl -s -o CHANGELOG https://upgrade.mikrotik.com/routeros/$LATEST_VERSION/CHANGELOG
-    #    cat CHANGELOG
-    #    echo "NEWEST=${NEWEST}" >> $GITHUB_ENV
-    #    echo "LATEST_VERSION=${LATEST_VERSION}" >> $GITHUB_ENV
-    #    if [ "${{ matrix.arch }}" == "x86" ]; then
-    #      ARCH=''
-    #    elif [ "${{ matrix.arch }}" == "arm" ]; then
-    #      ARCH='-arm'
-    #    elif [ "${{ matrix.arch }}" == "arm64" ]; then
-    #      ARCH='-arm64'
-    #    elif [ "${{ matrix.arch }}" == "mipsbe" ]; then
-    #      ARCH='-mipsbe'
-    #    elif [ "${{ matrix.arch }}" == "mmips" ]; then
-    #      ARCH='-mmips'
-    #    elif [ "${{ matrix.arch }}" == "smips" ]; then
-    #      ARCH='-smips'
-    #    elif [ "${{ matrix.arch }}" == "ppc" ]; then
-    #      ARCH='-ppc'
-    #    fi
-    #    echo "ARCH=$ARCH" >> $GITHUB_ENV
