@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: [x86]
+        arch: [x86, arm64]
 
     steps:
     - name: Checkout
@@ -85,7 +85,9 @@ jobs:
                        -R -J \
                        new_iso/
         elif [ "${{ matrix.arch }}" == "arm64" ]; then
-          sudo -E python3 patch.py kernel efiboot/EFI/BOOT/BOOTAA64.EFI
+          if [ -f efiboot/EFI/BOOT/BOOTAA64.EFI ]; then
+            sudo -E python3 patch.py kernel efiboot/EFI/BOOT/BOOTAA64.EFI
+          fi
           sudo umount efiboot/
           sudo xorriso -as mkisofs -o mikrotik-$LATEST_VERSION$ARCH-patched.iso \
                        -V "MikroTik $LATEST_VERSION ${{ matrix.arch }}" \
@@ -104,3 +106,9 @@ jobs:
         cd all_packages_iso$ARCH-$LATEST_VERSION/
         sudo zip ../all_packages$ARCH-$LATEST_VERSION-patched.zip *.npk
         cd ../
+
+    - name: Upload patched ISO
+      uses: actions/upload-artifact@v3
+      with:
+        name: mikrotik-${{ env.LATEST_VERSION }}${{ env.ARCH }}-patched.iso
+        path: mikrotik-${{ env.LATEST_VERSION }}${{ env.ARCH }}-patched.iso
