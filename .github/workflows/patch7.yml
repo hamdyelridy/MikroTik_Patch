@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       routeros_version:
-        description: '7.2'
+        description: 'RouterOS Version to Patch'
         required: true
         type: string
       architecture:
